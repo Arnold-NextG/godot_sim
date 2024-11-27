@@ -1,3 +1,18 @@
+# Fork
+- use godot plugin for vscode
+- adjust port to match port from godot
+- add vscode exe to godot settings
+![alt text](image.png)
+- match ports between vscode extension and godot
+![alt text](image-1.png)
+![alt text](image-2.png)
+- add to .vscode/settings.json
+```
+{
+  "godotTools.editorPath.godot4": "/Users/hochmax/Downloads/Godot.app"
+}
+```
+  - select f1 debug godot from vscode
 # AgOpenGPSSimPoC
 
 Proof of concept simulator ("digital twin"?) made with Godot game engine for AgOpenGPS.  

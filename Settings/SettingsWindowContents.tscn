@@ -296,41 +296,43 @@ grow_vertical = 2
 
 [node name="GridContainer" type="GridContainer" parent="UDP/VBoxContainer"]
 layout_mode = 2
-columns = 6
+columns = 8
 
 [node name="Label_Subnet" type="Label" parent="UDP/VBoxContainer/GridContainer"]
 layout_mode = 2
-text = "Subnet:"
+text = "Ip:"
 
-[node name="SpinBox_IP_1" type="SpinBox" parent="UDP/VBoxContainer/GridContainer"]
-layout_mode = 2
-max_value = 255.0
-value = 192.0
+; [node name="SpinBox_IP_1" type="SpinBox" parent="UDP/VBoxContainer/GridContainer"]
+; layout_mode = 2
+; max_value = 255.0
+; value = 192.0
 
-[node name="Label_Dot1" type="Label" parent="UDP/VBoxContainer/GridContainer"]
-layout_mode = 2
-text = "."
+; [node name="Label_Dot1" type="Label" parent="UDP/VBoxContainer/GridContainer"]
+; layout_mode = 2
+; text = "."
 
-[node name="SpinBox_IP_2" type="SpinBox" parent="UDP/VBoxContainer/GridContainer"]
-layout_mode = 2
-max_value = 255.0
-value = 168.0
+; [node name="SpinBox_IP_2" type="SpinBox" parent="UDP/VBoxContainer/GridContainer"]
+; layout_mode = 2
+; max_value = 255.0
+; value = 168.0
 
-[node name="Label_Dot2" type="Label" parent="UDP/VBoxContainer/GridContainer"]
-layout_mode = 2
-text = "."
+; [node name="Label_Dot2" type="Label" parent="UDP/VBoxContainer/GridContainer"]
+; layout_mode = 2
+; text = "."
 
-[node name="SpinBox_IP_3" type="SpinBox" parent="UDP/VBoxContainer/GridContainer"]
-layout_mode = 2
-max_value = 255.0
-value = 5.0
+; [node name="SpinBox_IP_3" type="SpinBox" parent="UDP/VBoxContainer/GridContainer"]
+; layout_mode = 2
+; max_value = 255.0
+; value = 5.0
 
-[node name="CheckBox_UseIP126ForServer" type="CheckBox" parent="UDP/VBoxContainer"]
+; [node name="Label_Dot3" type="Label" parent="UDP/VBoxContainer/GridContainer"]
+; layout_mode = 2
+; text = "."
+[node name="IpAddress" type="LineEdit" parent="UDP/VBoxContainer"]
 layout_mode = 2
-text = "Use IP-address Subnet.126 for server
-(uncheck if running AgOpenGPS on the same IP)"
-text_overrun_behavior = 3
-clip_text = true
+text = "192.168.178.87"
+
+
 
 [node name="Button_Update_UDP" type="Button" parent="UDP/VBoxContainer"]
 layout_mode = 2

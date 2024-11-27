@@ -18,7 +18,7 @@ const udpServerPort:int = 8888
 const udpDestPort:int = 9999
 var udpDestAddress:String = "?"
 
-var subnet:Array[int] = [0, 0, 0]
+var Ip:Array[int] = [0, 0, 0, 0]
 
 class SteerSettings:
 	var kp:int = 0
@@ -49,12 +49,10 @@ func _ready():
 	
 	$Panel_3rdPartyCredits/CheckBox_Hide3rdPartyAssetsOnProgramStart.button_pressed = !($Window_Settings/TabContainer_Settings.show3rdPartyCreditsOnStart)
 	$Panel_3rdPartyCredits.visible = !($Panel_3rdPartyCredits/CheckBox_Hide3rdPartyAssetsOnProgramStart.button_pressed)
-	
-	updateUDPSubnet( [
-		$Window_Settings/TabContainer_Settings/UDP/VBoxContainer/GridContainer/SpinBox_IP_1.value,
-		$Window_Settings/TabContainer_Settings/UDP/VBoxContainer/GridContainer/SpinBox_IP_2.value,
-		$Window_Settings/TabContainer_Settings/UDP/VBoxContainer/GridContainer/SpinBox_IP_3.value
-		], $Window_Settings/TabContainer_Settings/UDP/VBoxContainer/CheckBox_UseIP126ForServer.button_pressed )
+	updateUDPSubnet(
+		$Window_Settings/TabContainer_Settings/UDP/VBoxContainer/IpAddress.get_text()
+	)
+	$Window_Settings/TabContainer_Settings/UDP/VBoxContainer/IpAddress.text_changed.connect(_on_ip_address_changed)
 
 	# This is a workaround for bug
 	# https://github.com/godotengine/godot/issues/86369
@@ -62,11 +60,17 @@ func _ready():
 	# causing terrain to sometimes disappear (due to shader displacing the vertices)
 	terrain.custom_aabb = AABB(Vector3(-5000, -5000, -5000), Vector3(10000, 10000, 10000))
 
+
+func _on_ip_address_changed(new_text: String):
+	updateUDPSubnet(
+        new_text
+    )
+
 func _exit_tree():
 	$Window_Settings/TabContainer_Settings.show3rdPartyCreditsOnStart = !($Panel_3rdPartyCredits/CheckBox_Hide3rdPartyAssetsOnProgramStart.button_pressed)
 	$Window_Settings/TabContainer_Settings.saveConfig();
-	if (ffbInitSuccessful):
-		destroyForceFeedbackEffect()
+	#if (ffbInitSuccessful):
+		#destroyForceFeedbackEffect()
 
 # Not sure what's going on here... Looks like the raycast to find ground level
 # does not work immediately after generating new terrain
@@ -309,7 +313,8 @@ func _on_button_reset_steer_angle_and_speed_pressed():
 	$Panel_Controls/VBoxContainer_Controls/GridContainer_Sliders/HSlider_TargetSpeed.value = 0
 	joystickSpeedSetpoint = 0
 
-var timeAfterPAOGIMessage:float = 0
+var timeAfterGNGGAMessage:float = 0
+var timeAfterIMUMessage:float = 0
 var timeAfterValidSteerAngleSetpoint:float = 0
 
 func _physics_process(delta):
@@ -405,14 +410,40 @@ func _physics_process(delta):
 	if (!$Panel_Controls/VBoxContainer_Controls/CheckBox_AutomaticSteering.button_pressed):
 		$Tractor.steering = -deg_to_rad($Panel_Controls/VBoxContainer_Controls/GridContainer_Sliders/HSlider_HIDAngle.value)
 
-	timeAfterPAOGIMessage += delta
+	timeAfterGNGGAMessage += delta
 	timeAfterValidSteerAngleSetpoint += delta
-	
-	if (timeAfterPAOGIMessage >= 0.0999):
-		timeAfterPAOGIMessage = 0
+	timeAfterIMUMessage += delta	
+
+	if (timeAfterIMUMessage >= 0.01):
+		timeAfterIMUMessage = 0
+		# var imu = "$IMU,%d:%1.5f,%1.5f,%1.5f,%1.5f" % [
+		# 	# $Tractor.acceleration.x,
+		# 	# $Tractor.acceleration.y,
+		# 	# $Tractor.acceleration.z,
+		# 	Time.get_ticks_msec(),
+		# 	$Tractor.quaternion.x,
+		# 	$Tractor.quaternion.y,
+		# 	$Tractor.quaternion.z,
+		# 	$Tractor.quaternion.w,
+		# 	]
+		var imu = "$IMU,%010d:%+09.5f,%+09.5f,%+09.5f:\t\t%+09.5f,%+09.5f,%+09.5f" % [
+			Time.get_ticks_msec(),
+			$Tractor.angular_velocity.x,
+			$Tractor.angular_velocity.y, 
+			$Tractor.angular_velocity.z,
+			$Tractor.linear_acceleration.x,
+			$Tractor.linear_acceleration.y,
+			$Tractor.linear_acceleration.z,
+		]
+		if (clientPeer):
+			imu += "\r\n"
+			clientPeer.put_packet(imu.to_ascii_buffer())
+
+	if (timeAfterGNGGAMessage >= 0.0999):
+		timeAfterGNGGAMessage = 0
 		
-		var paogi = "$PAOGI,%s,00000.%d,N,00000.%d,E,4,12,0.01,%1.3f,1.0,%1.3f,%1.2f,%1.2f,,*" % [
-			getPAOGITimeString(),
+		var gngga = "$GNGGA,%s,00000.%d,N,00000.%d,E,4,12,0.01,%1.3f,1.0,%1.3f,%1.2f,%1.2f,,*" % [
+			getGNGGATimeString(),
 			int($Tractor.latitude * 60e7),
 			int($Tractor.longitude * 60e7),
 			$Tractor.altitude,
@@ -421,26 +452,14 @@ func _physics_process(delta):
 			$Tractor.roll
 			]
 
-		var checksum = getNMEAChecksum(paogi)
-		paogi += checksum
+		var checksum = getNMEAChecksum(gngga)
+		gngga += checksum
 
 		if (clientPeer):
 			if ($Window_Settings/TabContainer_Settings/General/VBoxContainer_General/CheckBox_DebugMessage_Send. is_pressed()):
-				print("Uptime: %1.3f s, IP: %s, port: %d: sent msg: %s" % [float(Time.get_ticks_msec() / 1000.0), udpDestAddress, udpDestPort, paogi])
-
-			paogi += "\r\n"
-			clientPeer.put_packet(paogi.to_ascii_buffer())
-
-#		var dummyPacket:String = "$PAOGI,133048.80,6250.0839939,N,02504.6965874,E,4,12,0.70,206.646,0.8,0.019,207.24,-3.98,,*"
-#		var checksum = getNMEAChecksum(dummyPacket)
-#		dummyPacket += checksum
-#		dummyPacket += "\r\n"
-
-#		var dummyPacket:String = "$PAOGI,133048.80,6250.0839939,N,02504.6965874,E,4,12,0.70,206.646,0.8,0.019,207.24,-3.98,,*44\r\n"
-#		clientPeer.put_packet(dummyPacket.to_ascii_buffer())
-	
-#		var testNMEA:String = "$PAOGI,133048.80,6250.0839939,N,02504.6965874,E,4,12,0.70,206.646,0.8,0.019,207.24,-3.98,,*"
-#		print(getNMEAChecksum(testNMEA))
+				print("Uptime: %1.3f s, IP: %s, port: %d: sent msg: %s" % [float(Time.get_ticks_msec() / 1000.0), udpDestAddress, udpDestPort, gngga])
+			gngga += "\r\n"
+			clientPeer.put_packet(gngga.to_ascii_buffer())
 
 	if (timeAfterValidSteerAngleSetpoint > 1):
 		$Panel_Controls/VBoxContainer_Controls/CheckBox_AutomaticSteering.button_pressed = false
@@ -450,7 +469,7 @@ func _physics_process(delta):
 
 	updateLocationOrientation(delta)
 	handleUDPComms()
-	handleForceFeedback($Window_Settings/TabContainer_Settings/Controls/VBoxContainer_Controls/CheckBox_AutoSteeringFFB.button_pressed)
+	#handleForceFeedback($Window_Settings/TabContainer_Settings/Controls/VBoxContainer_Controls/CheckBox_AutoSteeringFFB.button_pressed)
 
 	if (Input.is_action_just_pressed("teleport_tractor")):
 		teleportTractor($FirstPersonFlyer/ManipulatorMeshes/ManipulatorTip.global_position)
@@ -459,7 +478,7 @@ func handleUDPComms():
 	if ((!udpServer) || (!clientPeer)):
 		return
 	
-	# Note: PAOGI is handled separately (in _physics_process) to keep sending of it more precise
+	# Note: GNGGA is handled separately (in _physics_process) to keep sending of it more precise
 	udpServer.poll()
 
 	if (udpServer.is_connection_available()):
@@ -503,12 +522,12 @@ func handleUDPComms():
 				PGN_253[6] = (sa >> 8) & 0xFF
 				
 				# Heading (constant? (code taken from teensy))
-				# This is relayed in PAOGI, so not needed here?
+				# This is relayed in GNGGA, so not needed here?
 				PGN_253[7] = 9999 & 0xFF
 				PGN_253[8] = (9999 >> 8) & 0xFF
 				
 				# Roll (constant? (code taken from teensy))
-				# This is relayed in PAOGI, so not needed here?
+				# This is relayed in GNGGA, so not needed here?
 				PGN_253[9] = 8888 & 0xFF
 				PGN_253[10] = (8888 >> 8) & 0xFF
 			
@@ -564,22 +583,22 @@ func handleUDPComms():
 			elif (packet[3] == 202):	# 0xCA
 				# Whoami
 				packetDescription = "Whoami"
-				
-				if (packet[4] == 3 && packet[5] == 202 && packet[6] == 202):
-					var Eth_myip:PackedByteArray = [subnet[0], subnet[1], subnet[2], 126]
-					var rem_ip:PackedByteArray = [subnet[0], subnet[1], subnet[2], 10]
-					var scanReply:PackedByteArray = [128, 129, Eth_myip[3], 203, 7,
-						Eth_myip[0], Eth_myip[1], Eth_myip[2], Eth_myip[3], 
-						rem_ip[0],rem_ip[1],rem_ip[2], 23 ]
-
-					# Checksum
-					var ck_a:int = 0
-					for i in range(2, scanReply.size() - 1):
-						ck_a += scanReply.decode_u8(i)
-					
-					scanReply[scanReply.size() - 1] = ck_a;
-#					clientPeer_Broadcast.put_packet(scanReply)
-					peer.put_packet(scanReply)
+				#
+				#if (packet[4] == 3 && packet[5] == 202 && packet[6] == 202):
+					#var Eth_myip:PackedByteArray = [subnet[0], subnet[1], subnet[2], 126]
+					#var rem_ip:PackedByteArray = [subnet[0], subnet[1], subnet[2], 10]
+					#var scanReply:PackedByteArray = [128, 129, Eth_myip[3], 203, 7,
+						#Eth_myip[0], Eth_myip[1], Eth_myip[2], Eth_myip[3], 
+						#rem_ip[0],rem_ip[1],rem_ip[2], 23 ]
+#
+					## Checksum
+					#var ck_a:int = 0
+					#for i in range(2, scanReply.size() - 1):
+						#ck_a += scanReply.decode_u8(i)
+					#
+					#scanReply[scanReply.size() - 1] = ck_a;
+##					clientPeer_Broadcast.put_packet(scanReply)
+					#peer.put_packet(scanReply)
 			elif (packet[3] == 252):	# 0xFC
 				packetDescription = "Steer settings"
 				steerSettings_Received.kp = packet.decode_u8(5)
@@ -619,32 +638,32 @@ func getNMEAChecksum(sentence:String) -> String:
 	
 	return "%X%X" % [(sum >> 4), (sum % 16)]
 
-var lastPAOGISecondValue:int = 0
-var lastPAOGISubSecondValue:int = 0
+var lastGNGGASecondValue:int = 0
+var lastGNGGASubSecondValue:int = 0
 	
-func getPAOGITimeString() -> String:
+func getGNGGATimeString() -> String:
 	var timeDict = Time.get_time_dict_from_system()
 	
 	# This sub-second value handling is (just) another dirty hack, sorry...
 	# (get_time_dict_from_system doesn't return any more accurate values than seconds)
-	lastPAOGISubSecondValue += 10
+	lastGNGGASubSecondValue += 10
 
-	if (lastPAOGISubSecondValue >= 100):
-		lastPAOGISubSecondValue = 0
+	if (lastGNGGASubSecondValue >= 100):
+		lastGNGGASubSecondValue = 0
 	
-	if (lastPAOGISecondValue != timeDict.second):
-		lastPAOGISecondValue = timeDict.second
-		lastPAOGISubSecondValue = 0
+	if (lastGNGGASecondValue != timeDict.second):
+		lastGNGGASecondValue = timeDict.second
+		lastGNGGASubSecondValue = 0
 	
 	var timeString = (getZeroPaddedIntString(timeDict.hour) + 
 			getZeroPaddedIntString(timeDict.minute) + 
 			getZeroPaddedIntString(timeDict.second) + 
 			"." +
-			getZeroPaddedIntString(lastPAOGISubSecondValue))
+			getZeroPaddedIntString(lastGNGGASubSecondValue))
 	return timeString
 
 func getZeroPaddedIntString(val:int) -> String:
-	# (For NMEA (PAOGI))
+	# (For NMEA (GNGGA))
 	return "%d%d" % [ int(val / 10), int(val % 10) ]
 
 # Handle force feedback outside everything else and only
@@ -655,80 +674,80 @@ func getZeroPaddedIntString(val:int) -> String:
 
 const ffbDeviceId:int = 0
 
-var ffbNode:FFBPlugin
+# var ffbNode:FFBPlugin
 var ffbInitTried:bool = false
 var ffbNodeInitSuccessful:bool = false
 var ffbInitSuccessful:bool = false
 var ffbEffectId:int
 
-func handleForceFeedback(active:bool):
-	var forceFeedbackForce:float = 0
+#func handleForceFeedback(active:bool):
+	#var forceFeedbackForce:float = 0
+	#
+	#if (active):
+		#if (!ffbInitTried):
+			#ffbInitTried = true
+			#ffbInitSuccessful = initForceFeedback()
+#
+		#if (ffbInitSuccessful):
+			#if ($Panel_Controls/VBoxContainer_Controls/CheckBox_AutomaticSteering.button_pressed):
+				#var steerSetting:SteerSettings = SteerSettings.new()
+				#
+				#match ($Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/HBoxContainer/OptionButton_ParametersToUse.selected):
+					#0:	# Local
+						#steerSetting.kp = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/SpinBox_PGain_Local.value
+						#steerSetting.highPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/SpinBox_MaximumLimit_Local.value
+						#steerSetting.minPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/SpinBox_MinimumToMove_Local.value
+					#1:	# Received
+						## This doesn't work when no settings received in this "session"
+						## steerSetting = steerSettings_Received
+						## -> Replaced with this ugly read from labels (works, though)
+						#steerSetting.kp = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/Label_PGain_Received.text.to_int()
+						#steerSetting.highPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/Label_MaximumLimit_Received.text.to_int()
+						#steerSetting.minPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/Label_MinimumToMove_Received.text.to_int()
+				#
+				#var error = steeringWheelPosition * 45.0 - steerAngleSetpoint
+				#forceFeedbackForce = calcSteeringPID(error, steerSetting)
+				#ffbNode.update_constant_force_effect(forceFeedbackForce, 0, ffbEffectId)
+##				var targetValue = steerAngleSetpoint / 45.0
+##				var error = steeringWheelPosition - targetValue
+##				ffbNode.update_constant_force_effect(error * 20.0, 0, ffbEffectId)
+			#else:
+				#ffbNode.update_constant_force_effect(0, 0, ffbEffectId)
+		#
+	#elif (ffbInitSuccessful):
+		#destroyForceFeedbackEffect()
+		#ffbInitSuccessful = false
+		#ffbInitTried = false
 	
-	if (active):
-		if (!ffbInitTried):
-			ffbInitTried = true
-			ffbInitSuccessful = initForceFeedback()
-
-		if (ffbInitSuccessful):
-			if ($Panel_Controls/VBoxContainer_Controls/CheckBox_AutomaticSteering.button_pressed):
-				var steerSetting:SteerSettings = SteerSettings.new()
-				
-				match ($Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/HBoxContainer/OptionButton_ParametersToUse.selected):
-					0:	# Local
-						steerSetting.kp = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/SpinBox_PGain_Local.value
-						steerSetting.highPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/SpinBox_MaximumLimit_Local.value
-						steerSetting.minPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/SpinBox_MinimumToMove_Local.value
-					1:	# Received
-						# This doesn't work when no settings received in this "session"
-						# steerSetting = steerSettings_Received
-						# -> Replaced with this ugly read from labels (works, though)
-						steerSetting.kp = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/Label_PGain_Received.text.to_int()
-						steerSetting.highPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/Label_MaximumLimit_Received.text.to_int()
-						steerSetting.minPWM = $Window_Settings/TabContainer_Settings/SteerSettings/VBoxContainer/GridContainer_SteerSettings/Label_MinimumToMove_Received.text.to_int()
-				
-				var error = steeringWheelPosition * 45.0 - steerAngleSetpoint
-				forceFeedbackForce = calcSteeringPID(error, steerSetting)
-				ffbNode.update_constant_force_effect(forceFeedbackForce, 0, ffbEffectId)
-#				var targetValue = steerAngleSetpoint / 45.0
-#				var error = steeringWheelPosition - targetValue
-#				ffbNode.update_constant_force_effect(error * 20.0, 0, ffbEffectId)
-			else:
-				ffbNode.update_constant_force_effect(0, 0, ffbEffectId)
-		
-	elif (ffbInitSuccessful):
-		destroyForceFeedbackEffect()
-		ffbInitSuccessful = false
-		ffbInitTried = false
+	#$Panel_JoystickFFBSettings/VBoxContainer_JoystickFFBSettings/HBoxContainer_FFBForce/HSlider_Force.value = forceFeedbackForce
+	#$Panel_JoystickFFBSettings/VBoxContainer_JoystickFFBSettings/HBoxContainer_FFBForce/Label_Force_Value.text = "%1.2f" % forceFeedbackForce
+#
+#func initForceFeedback() -> bool:
+	#if (ffbNode == null):
+		#ffbNode = FFBPlugin.new()
+		#self.add_child(ffbNode)
 	
-	$Panel_JoystickFFBSettings/VBoxContainer_JoystickFFBSettings/HBoxContainer_FFBForce/HSlider_Force.value = forceFeedbackForce
-	$Panel_JoystickFFBSettings/VBoxContainer_JoystickFFBSettings/HBoxContainer_FFBForce/Label_Force_Value.text = "%1.2f" % forceFeedbackForce
-
-func initForceFeedback() -> bool:
-	if (ffbNode == null):
-		ffbNode = FFBPlugin.new()
-		self.add_child(ffbNode)
+	#if (!ffbNodeInitSuccessful && ffbNode):
+		#if ffbNode.init_ffb(ffbDeviceId) < 0: # Initializes the haptic subsystem for given device id
+			#print("Cant initialize force feedback subsystem, most likely device doesn't support it.")
+		#else:
+			#ffbNodeInitSuccessful = true
 	
-	if (!ffbNodeInitSuccessful && ffbNode):
-		if ffbNode.init_ffb(ffbDeviceId) < 0: # Initializes the haptic subsystem for given device id
-			print("Cant initialize force feedback subsystem, most likely device doesn't support it.")
-		else:
-			ffbNodeInitSuccessful = true
-	
-	if (ffbNodeInitSuccessful):
-		ffbEffectId = ffbNode.init_constant_force_effect() # Initializes constant force effect and returns its effect_id
-		if (ffbEffectId < 0):
-			print_debug("Error initialising constant force effect")
-		else:
-			if (ffbNode.play_constant_force_effect(ffbEffectId, 0) < 0): # Second parameter is how many times the effect is played. 0 == infinite
-				print("Starting ffb effect failed")
-			else:
-				return true
+	#if (ffbNodeInitSuccessful):
+		#ffbEffectId = ffbNode.init_constant_force_effect() # Initializes constant force effect and returns its effect_id
+		#if (ffbEffectId < 0):
+			#print_debug("Error initialising constant force effect")
+		#else:
+			#if (ffbNode.play_constant_force_effect(ffbEffectId, 0) < 0): # Second parameter is how many times the effect is played. 0 == infinite
+				#print("Starting ffb effect failed")
+			#else:
+				#return true
+#
+	#return false
 
-	return false
-
-func destroyForceFeedbackEffect():
-	ffbNode.update_constant_force_effect(0, 0, ffbEffectId)
-	ffbNode.destroy_ffb_effect(ffbEffectId)
+#func destroyForceFeedbackEffect():
+	#ffbNode.update_constant_force_effect(0, 0, ffbEffectId)
+	#ffbNode.destroy_ffb_effect(ffbEffectId)
 
 const LOW_HIGH_DEGREES:float = 3.0
 
@@ -820,30 +839,27 @@ func _on_button_show_settings_pressed():
 	$Window_Settings.visible = true
 	$Window_Settings.grab_focus()
 
-func updateUDPSubnet(newSubnet:Array[int], useIP126ForServer:bool):
-	subnet = newSubnet
-	var subnetString:String = "%d.%d.%d" % [subnet[0], subnet[1], subnet[2] ]
+func updateUDPSubnet(newIp:String):
 
-	udpDestAddress = subnetString + ".10"
 
 	if (clientPeer):
 		clientPeer.close()
 
 	clientPeer = PacketPeerUDP.new()
 	clientPeer.set_broadcast_enabled(true)
-	clientPeer.set_dest_address(udpDestAddress, udpDestPort)
+	clientPeer.set_dest_address(newIp, udpDestPort)
 
 	if (udpServer):
 		udpServer.stop()
 
 	udpServer = UDPServer.new()
-	if (useIP126ForServer):
-		var udpServerAddress:String = subnetString + ".126"
-		udpServer.listen(udpServerPort, udpServerAddress)
-	else:
+	#if (useIP126ForServer):
+		#var udpServerAddress:String = IpString + ".126"
+		#udpServer.listen(udpServerPort, udpServerAddress)
+	#else:
 		# Server not in specific address (serve in all addresses)
 		# (This is needed when the address Subnet.126 is not actually present
 		# on the machine).
-		udpServer.listen(udpServerPort)
+	udpServer.listen(udpServerPort,"0.0.0.0")
 	
 	peers.clear()

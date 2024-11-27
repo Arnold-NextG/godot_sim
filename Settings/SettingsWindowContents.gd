@@ -52,10 +52,10 @@ func loadConfig():
 	$Terrain/GridContainer/SpinBox_CenterHillHeight.value = config.get_value("Terrain", "CenterHillHeight", 0)
 	$Terrain/GridContainer/SpinBox_CenterHillPeriod.value = config.get_value("Terrain", "CenterHillPeriod", 1000)
 
-	$UDP/VBoxContainer/GridContainer/SpinBox_IP_1.value = config.get_value("UDP", "Subnet_1", 192)
-	$UDP/VBoxContainer/GridContainer/SpinBox_IP_2.value = config.get_value("UDP", "Subnet_2", 168)
-	$UDP/VBoxContainer/GridContainer/SpinBox_IP_3.value = config.get_value("UDP", "Subnet_3", 5)
-	$UDP/VBoxContainer/CheckBox_UseIP126ForServer.button_pressed = config.get_value("UDP", "UseIP126ForServer", false)
+	# $UDP/VBoxContainer/GridContainer/SpinBox_IP_1.value = config.get_value("UDP", "Subnet_1", 192)
+	# $UDP/VBoxContainer/GridContainer/SpinBox_IP_2.value = config.get_value("UDP", "Subnet_2", 168)
+	# $UDP/VBoxContainer/GridContainer/SpinBox_IP_3.value = config.get_value("UDP", "Subnet_3", 5)
+	# $UDP/VBoxContainer/CheckBox_UseIP126ForServer.button_pressed = config.get_value("UDP", "UseIP126ForServer", false)
 
 	show3rdPartyCreditsOnStart = config.get_value("Visibility", "Show3rdPartyCreditsOnStart", true)
 	
@@ -101,6 +101,7 @@ func saveConfig():
 	config.set_value("UDP", "Subnet_1", $UDP/VBoxContainer/GridContainer/SpinBox_IP_1.value)
 	config.set_value("UDP", "Subnet_2", $UDP/VBoxContainer/GridContainer/SpinBox_IP_2.value)
 	config.set_value("UDP", "Subnet_3", $UDP/VBoxContainer/GridContainer/SpinBox_IP_3.value)
+	config.set_value("UDP", "Subnet_4", $UDP/VBoxContainer/GridContainer/SpinBox_IP_4.value)
 	config.set_value("UDP", "UseIP126ForServer", $UDP/VBoxContainer/CheckBox_UseIP126ForServer.button_pressed)
 
 	config.save(configFileName)

@@ -60,12 +60,48 @@ var altitude:float = 0		# in m
 var heading:float = 0		# in deg
 var roll:float = 0			# in deg
 var measuredSpeed:float = 0	# in km/h
-
 var lastPos:Vector3
-
 const earthsCircumference = 40075.017e3	# in m
 
+
+
+var linear_acceleration: Vector3 = Vector3.ZERO
+var previous_velocities: Array[Vector3] = []
+var previous_accelerations: Array[Vector3] = []
+const VELOCITY_HISTORY = 20
+const GRAVITY = Vector3(0, -9.81, 0)  # Global gravity vector in m/s²
+
 func _physics_process(delta):
+    # Transform global velocity to local coordinate system
+	var local_velocity = transform.basis.inverse() * linear_velocity
+	previous_velocities.push_back(local_velocity)
+
+	if previous_velocities.size() > VELOCITY_HISTORY:
+		previous_velocities.pop_front()
+
+	if previous_velocities.size() == VELOCITY_HISTORY:
+		# Calculate current acceleration using all velocity samples
+		var velocity_changes = Vector3.ZERO
+		for i in range(1, VELOCITY_HISTORY):
+			velocity_changes += (previous_velocities[i] - previous_velocities[i-1])
+        
+		var current_acceleration = velocity_changes / (delta * (VELOCITY_HISTORY - 1))
+		previous_accelerations.push_back(current_acceleration)
+
+		if previous_accelerations.size() > VELOCITY_HISTORY:
+			previous_accelerations.pop_front()
+            
+		# Average the last 5 accelerations
+		var avg_acceleration = Vector3.ZERO
+		for acc in previous_accelerations:
+			avg_acceleration += acc
+		
+		var local_gravity = transform.basis.inverse() * GRAVITY
+		linear_acceleration = (avg_acceleration / previous_accelerations.size()) + local_gravity
+        
+		print("Local acceleration: ", linear_acceleration)
+	######### end linear acceleration
+
 	# Simplest ever speed controller...
 	var posChange = self.global_transform.origin - lastPos
 	lastPos = self.global_transform.origin
